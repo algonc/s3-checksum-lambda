@@ -73,6 +73,8 @@ public class Checksum implements RequestHandler<S3Event, String>
         String bucket = s3event.getS3().getBucket().getName();
         String key = s3event.getS3().getObject().getKey();
 
+        logger.log("Computing hash of object in bucket '" + bucket + "' with key '" + key + "'");
+
         ObjectMetadata metadata = s3.getObjectMetadata(bucket, key);
         long fileSize = metadata.getContentLength();
 
@@ -103,6 +105,8 @@ public class Checksum implements RequestHandler<S3Event, String>
                 end = fileSize - 1;
             }
 
+            logger.log("Hash of object will be computed on a range of bytes [" + start + "-" + end + "]");
+
             getObjectRequest.setRange(start, end);
         }
 
@@ -110,7 +114,7 @@ public class Checksum implements RequestHandler<S3Event, String>
 
         GeneralDigest hasher = hasher(previousState);
 
-        metadata = downloadAndCompute(getObjectRequest, hasher, logger);
+        downloadAndCompute(getObjectRequest, hasher, logger);
 
         String hash = "";
         boolean retrigger = false;
@@ -118,8 +122,8 @@ public class Checksum implements RequestHandler<S3Event, String>
         if (finalizeHash)
         {
             hash = generateHash(logger, bucket, key, hasher, metadata);
-            metadata.addUserMetadata(config.metaKeyPartialHash(), null);
-            metadata.addUserMetadata(config.metaKeyHashProgress(), null);
+            metadata.getUserMetadata().remove(config.metaKeyPartialHash());
+            metadata.getUserMetadata().remove(config.metaKeyHashProgress());
             metadata.addUserMetadata(config.metaKeyHash(), hash);
         }
         else
@@ -166,13 +170,19 @@ public class Checksum implements RequestHandler<S3Event, String>
         }
     }
 
-    private ObjectMetadata downloadAndCompute(GetObjectRequest getObjectRequest, GeneralDigest hasher, LambdaLogger logger)
+    private long downloadAndCompute(GetObjectRequest getObjectRequest, GeneralDigest hasher, LambdaLogger logger)
     {
         try (S3Object s3Object = s3.getObject(getObjectRequest))
         {
             ObjectMetadata metadata = s3Object.getObjectMetadata();
-            compute(hasher, s3Object, metadata.getContentLength());
-            return metadata;
+
+            long bytesToHash = metadata.getContentLength();
+
+            compute(hasher, s3Object, bytesToHash);
+
+            logger.log("Computed hash of " + bytesToHash + " bytes");
+
+            return bytesToHash;
         }
         catch (IOException ex)
         {
@@ -188,11 +198,10 @@ public class Checksum implements RequestHandler<S3Event, String>
 
         String hash = String.valueOf(Hex.encodeHex(hashOut));
 
-        String logMsg = "Bucket: " + bucket + "\n"
-                + "Key: " + key + "\n"
+        String logMsg = "Computed hash of object in bucket '" + bucket + "' with key '" + key + "'\n"
                 + "Content-Type: " + metadata.getContentType() + "\n"
                 + "Content-Length: " + metadata.getContentLength() + "\n"
-                + "SHA-256 Hash: " + hash;
+                + config.algorithm() + " Hash: " + hash;
         logger.log(logMsg);
 
         return hash;

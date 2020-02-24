@@ -1,0 +1,21 @@
+# General
+classes/
+
+# Maven
+target/
+dependency-reduced-pom.xml
+
+# OS Files
+.DS_Store
+Thumbs.db
+
+# Office
+~$*.doc*
+~$*.xls*
+
+# Eclipse
+.project
+.classpath
+.metadata
+.settings/
+bin/

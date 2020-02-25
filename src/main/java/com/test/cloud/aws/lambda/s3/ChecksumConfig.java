@@ -1,5 +1,42 @@
 package com.test.cloud.aws.lambda.s3;
 
+/**
+ * Provides access to the configurable {@link Checksum} properties.
+ *
+ * <p>
+ * {@link #bufferSize()}: The size of the buffer used during the download/hashing
+ * operation. Can be customized with the environment variable {@code BUFFER_SIZE}.
+ * Defaults to 10MB.
+ *
+ * <p>
+ * {@link #partSize()}: Determines the maximum amount of data hashed per function
+ * execution. If the file size is greater than this value, the lambda will re-trigger
+ * itself to continue the operation in another request. Can be customized with the
+ * environment variable {@code PART_SIZE}. Defaults to 5GB.
+ *
+ * <p>
+ * {@link #algorithm()}: The digest algorithm used by the function. Supported algorithms
+ * are {@code SHA256} and {@code MD5}. Can be customized with the environment variable
+ * {@code DIGEST_ALGORITHM}. Defaults to {@code SHA256}.
+ *
+ * <p>
+ * {@link #metaKeyHash()}: The S3 object metadata key used to hold the hash produced by
+ * the function. This value is automatically prefixed with "x-amz-meta-". Can be
+ * customized with the environment variable {@code METADATA_KEY_HASH}. Defaults to
+ * {@code sha256}.
+ *
+ * <p>
+ * {@link #metaKeyPartialHash()}: The S3 object metadata key used to hold the partial hash
+ * calculation value when the file is being hashed through multiple function calls. Can be
+ * customized with the environment variable {@code METADATA_KEY_PARTIAL_HASH}. Defaults to
+ * {@code partial-hash}.
+ *
+ * <p>
+ * {@link #metaKeyHashProgress()}: The S3 object metadata key used to hold the 0-based
+ * index position of the last byte processed when the file is being hashed through
+ * multiple function calls. Can be customized with the environment variable
+ * {@code METADATA_KEY_PARTS_HASHED}. Defaults to {@code hash-progress}.
+ */
 public class ChecksumConfig
 {
     // environment variables

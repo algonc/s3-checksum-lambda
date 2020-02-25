@@ -3,6 +3,8 @@ package com.test.cloud.aws.lambda.s3;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
+import java.util.function.Function;
+import java.util.function.Supplier;
 
 import com.amazonaws.services.lambda.AWSLambda;
 import com.amazonaws.services.lambda.AWSLambdaClientBuilder;
@@ -25,6 +27,7 @@ import org.apache.commons.codec.DecoderException;
 import org.apache.commons.codec.binary.Hex;
 import org.bouncycastle.crypto.digests.EncodableDigest;
 import org.bouncycastle.crypto.digests.GeneralDigest;
+import org.bouncycastle.crypto.digests.MD5Digest;
 import org.bouncycastle.crypto.digests.SHA256Digest;
 
 /**
@@ -47,6 +50,17 @@ public class Checksum implements RequestHandler<S3Event, String>
      */
     private final ChecksumConfig config;
 
+    /**
+     * The supplier of the {@link GeneralDigest} which serves the configured algorithm.
+     */
+    private final Supplier<GeneralDigest> digestSupplier;
+
+    /**
+     * The supplier of the resuming {@link GeneralDigest} which serves the configured
+     * algorithm.
+     */
+    private final Function<byte[], GeneralDigest> resumingDigestSupplier;
+
     public Checksum()
     {
         this(AmazonS3ClientBuilder.standard().build(),
@@ -59,6 +73,19 @@ public class Checksum implements RequestHandler<S3Event, String>
         this.s3 = s3;
         this.lambda = lambda;
         this.config = config;
+        switch (config.algorithm())
+        {
+            case SHA256:
+                digestSupplier = SHA256Digest::new;
+                resumingDigestSupplier = SHA256Digest::new;
+                break;
+            case MD5:
+                digestSupplier = MD5Digest::new;
+                resumingDigestSupplier = MD5Digest::new;
+                break;
+            default:
+                throw new IllegalStateException("Not supported: " + config.algorithm());
+        }
     }
 
     @Override
@@ -87,12 +114,12 @@ public class Checksum implements RequestHandler<S3Event, String>
         GetObjectRequest getObjectRequest = new GetObjectRequest(bucket, key);
 
         boolean isPartialHash = fileSize > config.partSize();
-        String previousState = null;
+        byte[] previousState = null;
         long end = fileSize - 1;
 
         if (isPartialHash)
         {
-            previousState = metadata.getUserMetaDataOf(config.metaKeyPartialHash());
+            previousState = previousHashState(metadata);
 
             long previousEnd = lastHashedByte(metadata);
 
@@ -251,24 +278,32 @@ public class Checksum implements RequestHandler<S3Event, String>
         }
     }
 
-    private GeneralDigest hasher(String encodedState)
+    private byte[] previousHashState(ObjectMetadata metadata)
     {
-        if ((encodedState == null) || encodedState.isEmpty())
+        String previousStateHex = metadata.getUserMetaDataOf(config.metaKeyPartialHash());
+
+        if ((previousStateHex == null) || previousStateHex.isEmpty())
         {
-            return new SHA256Digest();
+            return null;
         }
 
-        byte[] previousState;
         try
         {
-            previousState = Hex.decodeHex(encodedState.toCharArray());
+            return Hex.decodeHex(previousStateHex.toCharArray());
         }
         catch (DecoderException e)
         {
-            throw new IllegalStateException(e);
+            throw new IllegalStateException("The value of the '" + config.metaKeyPartialHash() + "' metadata (" + previousStateHex + ") cannot be decoded as hexadecimal value: " + e, e);
         }
+    }
 
-        return new SHA256Digest(previousState);
+    private GeneralDigest hasher(byte[] previousState)
+    {
+        if (previousState == null)
+        {
+            return digestSupplier.get();
+        }
+        return resumingDigestSupplier.apply(previousState);
     }
 
     private String hasherState(GeneralDigest hasher)
